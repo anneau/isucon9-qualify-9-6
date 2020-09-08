@@ -4,7 +4,7 @@ require 'sinatra/base'
 require 'mysql2'
 require 'mysql2-cs-bind'
 require 'bcrypt'
-require 'isucari/api'
+require 'isucari/api' 
 require "newrelic_rpm"
 require 'logger'
 
@@ -63,9 +63,6 @@ module Isucari
 
     BCRYPT_COST = 10
 
-    logger = Logger.new('sinatra.log')
-    error_logger = Logger.new('sinatra_error.log')
-
     configure :development do
       require 'sinatra/reloader'
       register Sinatra::Reloader
@@ -118,23 +115,24 @@ module Isucari
       end
 
       def get_category_by_id(category_id)
-        category = db.xquery('SELECT * FROM `categories` WHERE `id` = ?', category_id).first
+        category = categories.find { |category| category[:id] === category_id }
+        # category = db.xquery('SELECT * FROM `categories` WHERE `id` = ?', category_id).first
 
         return if category.nil?
 
-        parent_category_name = if category['parent_id'] != 0
-          parent_category = get_category_by_id(category['parent_id'])
+        # parent_category_name = if category['parent_id'] != 0
+        #   parent_category = get_category_by_id(category['parent_id'])
 
-          return if parent_category.nil?
+        #   return if parent_category.nil?
 
-          parent_category['category_name']
-        end
+        #   parent_category['category_name']
+        # end
 
         {
-          'id' => category['id'],
-          'parent_id' => category['parent_id'],
-          'category_name' => category['category_name'],
-          'parent_category_name' => parent_category_name
+          'id' => category[:id],
+          'parent_id' => category[:parent_id],
+          'category_name' => category[:category_name],
+          'parent_category_name' => category[:parent_category_name]
         }
       end
 
@@ -148,10 +146,12 @@ module Isucari
 
       def get_payment_service_url
         get_config_by_name('payment_service_url') || DEFAULT_PAYMENT_SERVICE_URL
+        # 'http://payment9q.isucon.ateam.life'
       end
 
       def get_shipment_service_url
         get_config_by_name('shipment_service_url') || DEFAULT_SHIPMENT_SERVICE_URL
+        # 'http://shipment9q.isucon.ateam.life'
       end
 
       def get_image_url(image_name)
@@ -163,8 +163,270 @@ module Isucari
       end
 
       def halt_with_error(status = 500, error = 'unknown')
-        error_logger.info e
         halt status, { 'error' => error }.to_json
+      end
+
+      def categories
+        [
+          {
+            "id": 1,
+            "parent_id": 0,
+            "category_name": "ソファー",
+            "parent_category_name": nil
+          },
+          {
+            "id": 2,
+            "parent_id": 1,
+            "category_name": "一人掛けソファー",
+            "parent_category_name": "ソファー"
+          },
+          {
+            "id": 3,
+            "parent_id": 1,
+            "category_name": "二人掛けソファー",
+            "parent_category_name": "ソファー"
+          },
+          {
+            "id": 4,
+            "parent_id": 1,
+            "category_name": "コーナーソファー",
+            "parent_category_name": "ソファー"
+          },
+          {
+            "id": 5,
+            "parent_id": 1,
+            "category_name": "二段ソファー",
+            "parent_category_name": "ソファー"
+          },
+          {
+            "id": 6,
+            "parent_id": 1,
+            "category_name": "ソファーベッド",
+            "parent_category_name": "ソファー"
+          },
+          {
+            "id": 10,
+            "parent_id": 0,
+            "category_name": "家庭用チェア",
+            "parent_category_name": nil
+          },
+          {
+            "id": 11,
+            "parent_id": 10,
+            "category_name": "スツール",
+            "parent_category_name": "家庭用チェア"
+          },
+          {
+            "id": 12,
+            "parent_id": 10,
+            "category_name": "クッションスツール",
+            "parent_category_name": "家庭用チェア"
+          },
+          {
+            "id": 13,
+            "parent_id": 10,
+            "category_name": "ダイニングチェア",
+            "parent_category_name": "家庭用チェア"
+          },
+          {
+            "id": 14,
+            "parent_id": 10,
+            "category_name": "リビングチェア",
+            "parent_category_name": "家庭用チェア"
+          },
+          {
+            "id": 15,
+            "parent_id": 10,
+            "category_name": "カウンターチェア",
+            "parent_category_name": "家庭用チェア"
+          },
+          {
+            "id": 20,
+            "parent_id": 0,
+            "category_name": "キッズチェア",
+            "parent_category_name": nil
+          },
+          {
+            "id": 21,
+            "parent_id": 20,
+            "category_name": "学習チェア",
+            "parent_category_name": "キッズチェア"
+          },
+          {
+            "id": 22,
+            "parent_id": 20,
+            "category_name": "ベビーソファ",
+            "parent_category_name": "キッズチェア"
+          },
+          {
+            "id": 23,
+            "parent_id": 20,
+            "category_name": "キッズハイチェア",
+            "parent_category_name": "キッズチェア"
+          },
+          {
+            "id": 24,
+            "parent_id": 20,
+            "category_name": "テーブルチェア",
+            "parent_category_name": "キッズチェア"
+          },
+          {
+            "id": 30,
+            "parent_id": 0,
+            "category_name": "オフィスチェア",
+            "parent_category_name": nil
+          },
+          {
+            "id": 31,
+            "parent_id": 30,
+            "category_name": "デスクチェア",
+            "parent_category_name": "オフィスチェア"
+          },
+          {
+            "id": 32,
+            "parent_id": 30,
+            "category_name": "ビジネスチェア",
+            "parent_category_name": "オフィスチェア"
+          },
+          {
+            "id": 33,
+            "parent_id": 30,
+            "category_name": "回転チェア",
+            "parent_category_name": "オフィスチェア"
+          },
+          {
+            "id": 34,
+            "parent_id": 30,
+            "category_name": "リクライニングチェア",
+            "parent_category_name": "オフィスチェア"
+          },
+          {
+            "id": 35,
+            "parent_id": 30,
+            "category_name": "投擲用椅子",
+            "parent_category_name": "オフィスチェア"
+          },
+          {
+            "id": 40,
+            "parent_id": 0,
+            "category_name": "折りたたみ椅子",
+            "parent_category_name": nil
+          },
+          {
+            "id": 41,
+            "parent_id": 40,
+            "category_name": "パイプ椅子",
+            "parent_category_name": "折りたたみ椅子"
+          },
+          {
+            "id": 42,
+            "parent_id": 40,
+            "category_name": "木製折りたたみ椅子",
+            "parent_category_name": "折りたたみ椅子"
+          },
+          {
+            "id": 43,
+            "parent_id": 40,
+            "category_name": "キッチンチェア",
+            "parent_category_name": "折りたたみ椅子"
+          },
+          {
+            "id": 44,
+            "parent_id": 40,
+            "category_name": "アウトドアチェア",
+            "parent_category_name": "折りたたみ椅子"
+          },
+          {
+            "id": 45,
+            "parent_id": 40,
+            "category_name": "作業椅子",
+            "parent_category_name": "折りたたみ椅子"
+          },
+          {
+            "id": 50,
+            "parent_id": 0,
+            "category_name": "ベンチ",
+            "parent_category_name": nil
+          },
+          {
+            "id": 51,
+            "parent_id": 50,
+            "category_name": "一人掛けベンチ",
+            "parent_category_name": "ベンチ"
+          },
+          {
+            "id": 52,
+            "parent_id": 50,
+            "category_name": "二人掛けベンチ",
+            "parent_category_name": "ベンチ"
+          },
+          {
+            "id": 53,
+            "parent_id": 50,
+            "category_name": "アウトドア用ベンチ",
+            "parent_category_name": "ベンチ"
+          },
+          {
+            "id": 54,
+            "parent_id": 50,
+            "category_name": "収納付きベンチ",
+            "parent_category_name": "ベンチ"
+          },
+          {
+            "id": 55,
+            "parent_id": 50,
+            "category_name": "背もたれ付きベンチ",
+            "parent_category_name": "ベンチ"
+          },
+          {
+            "id": 56,
+            "parent_id": 50,
+            "category_name": "ベンチマーク",
+            "parent_category_name": "ベンチ"
+          },
+          {
+            "id": 60,
+            "parent_id": 0,
+            "category_name": "座椅子",
+            "parent_category_name": nil
+          },
+          {
+            "id": 61,
+            "parent_id": 60,
+            "category_name": "和風座椅子",
+            "parent_category_name": "座椅子"
+          },
+          {
+            "id": 62,
+            "parent_id": 60,
+            "category_name": "高座椅子",
+            "parent_category_name": "座椅子"
+          },
+          {
+            "id": 63,
+            "parent_id": 60,
+            "category_name": "ゲーミング座椅子",
+            "parent_category_name": "座椅子"
+          },
+          {
+            "id": 64,
+            "parent_id": 60,
+            "category_name": "ロッキングチェア",
+            "parent_category_name": "座椅子"
+          },
+          {
+            "id": 65,
+            "parent_id": 60,
+            "category_name": "座布団",
+            "parent_category_name": "座椅子"
+          },
+          {
+            "id": 66,
+            "parent_id": 60,
+            "category_name": "空気椅子",
+            "parent_category_name": "座椅子"
+          }
+        ]
       end
     end
 
@@ -201,15 +463,15 @@ module Isucari
 
       items = if item_id > 0 && created_at > 0
         # paging
-        db.xquery("SELECT * FROM `items` WHERE `status` IN (?, ?) AND (`created_at` < ?  OR (`created_at` <= ? AND `id` < ?)) ORDER BY `created_at` DESC, `id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, Time.at(created_at), Time.at(created_at), item_id)
+        db.xquery("SELECT items.*, users.id as seller_id, users.account_name as seller_account_name, users.num_sell_items as seller_num_sell_items FROM `items` LEFT OUTER JOIN `users` ON users.id = items.seller_id WHERE `status` IN (?, ?) AND (items.`created_at` < ?  OR (items.`created_at` <= ? AND items.`id` < ?)) ORDER BY items.`created_at` DESC, `id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, Time.at(created_at), Time.at(created_at), item_id)
       else
         # 1st page
-        db.xquery("SELECT * FROM `items` WHERE `status` IN (?, ?) ORDER BY `created_at` DESC, `id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT)
+        db.xquery("SELECT items.*, users.id as seller_id, users.account_name as seller_account_name, users.num_sell_items as seller_num_sell_items FROM `items` LEFT OUTER JOIN `users` ON users.id = items.seller_id WHERE `status` IN (?, ?) ORDER BY items.`created_at` DESC, `id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT)
       end
 
       item_simples = items.map do |item|
-        seller = get_user_simple_by_id(item['seller_id'])
-        halt_with_error 404, 'seller not found' if seller.nil?
+        # seller = get_user_simple_by_id(item['seller_id'])
+        halt_with_error 404, 'seller not found' if item['seller_id'].nil?
 
         category = get_category_by_id(item['category_id'])
         halt_with_error 404, 'category not found' if category.nil?
@@ -217,7 +479,11 @@ module Isucari
         {
           'id' => item['id'],
           'seller_id' => item['seller_id'],
-          'seller' => seller,
+          'seller' => {
+            'id' => item['seller_id'],
+            'account_name' => item['seller_account_name'],
+            'num_sell_items' => item['seller_num_sell_items']
+          },
           'status' => item['status'],
           'name' => item['name'],
           'price' => item['price'],
@@ -250,20 +516,26 @@ module Isucari
       root_category = get_category_by_id(root_category_id)
       halt_with_error 404, 'category not found' if root_category.nil?
 
-      category_ids = db.xquery('SELECT id FROM `categories` WHERE parent_id = ?', root_category['id']).map { |row| row['id'] }
+      # category_ids = db.xquery('SELECT id FROM `categories` WHERE parent_id = ?', root_category['id']).map { |row| row['id'] }
+      # logger = Logger.new('sinatra.log')
+      # logger.info categories.select { |category| category[:parent_id] === root_category['id'] } if root_category['id'] == 40
+      category_ids = categories.select { |category| category[:parent_id] === root_category['id'] }.map { |row| row[:id] }
+      # logger.info "#{category_ids} #{log_category_ids}"
+      # category_ids = categories.map { |category| category['parent_id'] === root_category['id'] }.map { |row| row['id'] }
 
       item_id = params['item_id'].to_i
       created_at = params['created_at'].to_i
 
       items = if item_id > 0 && created_at > 0
-        db.xquery("SELECT * FROM `items` WHERE `status` IN (?, ?) AND category_id IN (?) AND (`created_at` < ?  OR (`created_at` <= ? AND `id` < ?)) ORDER BY `created_at` DESC, `id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, category_ids, Time.at(created_at), Time.at(created_at), item_id)
+        # db.xquery("SELECT * FROM `items` WHERE `status` IN (?, ?) AND category_id IN (?) AND (`created_at` < ?  OR (`created_at` <= ? AND `id` < ?)) ORDER BY `created_at` DESC, `id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, category_ids, Time.at(created_at), Time.at(created_at), item_id)
+        db.xquery("SELECT items.*, users.id as seller_id, users.account_name as seller_account_name, users.num_sell_items as seller_num_sell_items FROM `items` LEFT OUTER JOIN `users` ON users.id = items.seller_id WHERE `status` IN (?, ?) AND category_id IN (?) AND (items.`created_at` < ?  OR (items.`created_at` <= ? AND items.`id` < ?)) ORDER BY items.`created_at` DESC, items.`id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, category_ids, Time.at(created_at), Time.at(created_at), item_id)
       else
-        db.xquery("SELECT * FROM `items` WHERE `status` IN (?,?) AND category_id IN (?) ORDER BY `created_at` DESC, `id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, category_ids)
+        db.xquery("SELECT items.*, users.id as seller_id, users.account_name as seller_account_name, users.num_sell_items as seller_num_sell_items FROM `items` LEFT OUTER JOIN `users` ON users.id = items.seller_id WHERE `status` IN (?,?) AND category_id IN (?) ORDER BY items.`created_at` DESC, items.`id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, category_ids)
       end
 
       item_simples = items.map do |item|
-        seller = get_user_simple_by_id(item['seller_id'])
-        halt_with_error 404, 'seller not found' if seller.nil?
+        # seller = get_user_simple_by_id(item['seller_id'])
+        halt_with_error 404, 'seller not found' if item['seller_id'].nil?
 
         category = get_category_by_id(item['category_id'])
         halt_with_error 404, 'category not found' if category.nil?
@@ -271,7 +543,11 @@ module Isucari
         {
           'id' => item['id'],
           'seller_id' => item['seller_id'],
-          'seller' => seller,
+          'seller' => {
+            'id' => item['seller_id'],
+            'account_name' => item['seller_account_name'],
+            'num_sell_items' => item['seller_num_sell_items']
+          },
           'status' => item['status'],
           'name' => item['name'],
           'price' => item['price'],
@@ -298,7 +574,7 @@ module Isucari
       response.to_json
     end
 
-    # getTransactions
+    # 該当ユーザーの取引情報を取得するAPI
     get '/users/transactions.json' do
       user = get_user
 
@@ -306,6 +582,7 @@ module Isucari
       created_at = params['created_at'].to_i
 
       db.query('BEGIN')
+      # 自分が出品しているor買っている商品一覧を取得する
       items = if item_id > 0 && created_at > 0
         # paging
         begin
@@ -324,6 +601,7 @@ module Isucari
         end
       end
 
+      # それぞれの商品の結果を返すために、ループを回す
       item_details = items.map do |item|
         seller = get_user_simple_by_id(item['seller_id'])
         if seller.nil?
@@ -356,6 +634,7 @@ module Isucari
           'created_at' => item['created_at'].to_i
         }
 
+         # 販売者の情報を取得する
         if item['buyer_id'] != 0
           buyer = get_user_simple_by_id(item['buyer_id'])
           if buyer.nil?
@@ -367,6 +646,7 @@ module Isucari
           item_detail['buyer'] = buyer
         end
 
+        # 配送状況を取得する
         transaction_evidence = db.xquery('SELECT * FROM `transaction_evidences` WHERE `item_id` = ?', item['id']).first
         unless transaction_evidence.nil?
           shipping = db.xquery('SELECT * FROM `shippings` WHERE `transaction_evidence_id` = ?', transaction_evidence['id']).first
@@ -376,7 +656,11 @@ module Isucari
           end
 
           ssr = begin
-            api_client.shipment_status(get_shipment_service_url, 'reserve_id' => shipping['reserve_id'])
+            if shipping['status'] === 'done'
+              { 'status' => 'done' }
+            else
+              api_client.shipment_status(get_shipment_service_url, 'reserve_id' => shipping['reserve_id'])
+            end
           rescue
             db.query('ROLLBACK')
             halt_with_error 500, 'failed to request to shipment service'

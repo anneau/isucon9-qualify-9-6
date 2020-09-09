@@ -4,9 +4,10 @@ require 'sinatra/base'
 require 'mysql2'
 require 'mysql2-cs-bind'
 require 'bcrypt'
-require 'isucari/api' 
+require 'isucari/api'
 require "newrelic_rpm"
 require 'logger'
+require 'expeditor'
 
 class Mysql2ClientWithNewRelic < Mysql2::Client
   def initialize(*args)
@@ -62,6 +63,14 @@ module Isucari
     TRANSACTIONS_PER_PAGE = 10
 
     BCRYPT_COST = 10
+
+    EXPEDITOR = Expeditor::Service.new(
+      executor: Concurrent::ThreadPoolExecutor.new(
+        min_threads: 16,
+        max_threads: 16,
+        max_queue: 500,
+      )
+    )
 
     configure :development do
       require 'sinatra/reloader'
@@ -163,6 +172,7 @@ module Isucari
       end
 
       def halt_with_error(status = 500, error = 'unknown')
+        # NewRelic::Agent.notice_error(error)
         halt status, { 'error' => error }.to_json
       end
 
@@ -463,7 +473,15 @@ module Isucari
 
       items = if item_id > 0 && created_at > 0
         # paging
+        # db.xquery("SELECT items.*, users.id as seller_id, users.account_name as seller_account_name, users.num_sell_items as seller_num_sell_items FROM `items` LEFT OUTER JOIN `users` ON users.id = items.seller_id WHERE `status` IN (?, ?) AND (items.`created_at` < ?  OR (items.`created_at` <= ? AND items.`id` < ?)) ORDER BY items.`created_at` DESC, `id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, Time.at(created_at), Time.at(created_at), item_id)
+        sql = <<~EOS
+        SELECT items.*, users.id as seller_id, users.account_name as seller_account_name, users.num_sell_items as seller_num_sell_items FROM `items` LEFT OUTER JOIN `users` ON users.id = items.seller_id
+           WHERE `status` IN (?, ?) AND items.`created_at` < ? ORDER BY items.`created_at` DESC, `id` DESC LIMIT #{ITEMS_PER_PAGE + 1}
+           UNION SELECT items.*, users.id as seller_id, users.account_name as seller_account_name, users.num_sell_items as seller_num_sell_items FROM `items` LEFT OUTER JOIN `users` ON users.id = items.seller_id
+            WHERE `status` IN (?, ?) AND (items.`created_at` <= ? AND items.`id` < ?) ORDER BY items.`created_at` DESC, `id` DESC LIMIT #{ITEMS_PER_PAGE + 1}
+        EOS
         db.xquery("SELECT items.*, users.id as seller_id, users.account_name as seller_account_name, users.num_sell_items as seller_num_sell_items FROM `items` LEFT OUTER JOIN `users` ON users.id = items.seller_id WHERE `status` IN (?, ?) AND (items.`created_at` < ?  OR (items.`created_at` <= ? AND items.`id` < ?)) ORDER BY items.`created_at` DESC, `id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, Time.at(created_at), Time.at(created_at), item_id)
+        # db.xquery(sql, ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, Time.at(created_at), ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, Time.at(created_at), item_id)
       else
         # 1st page
         db.xquery("SELECT items.*, users.id as seller_id, users.account_name as seller_account_name, users.num_sell_items as seller_num_sell_items FROM `items` LEFT OUTER JOIN `users` ON users.id = items.seller_id WHERE `status` IN (?, ?) ORDER BY items.`created_at` DESC, `id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT)
@@ -528,7 +546,14 @@ module Isucari
 
       items = if item_id > 0 && created_at > 0
         # db.xquery("SELECT * FROM `items` WHERE `status` IN (?, ?) AND category_id IN (?) AND (`created_at` < ?  OR (`created_at` <= ? AND `id` < ?)) ORDER BY `created_at` DESC, `id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, category_ids, Time.at(created_at), Time.at(created_at), item_id)
+        # sql = <<-EOS
+        #   SELECT items.*, users.id as seller_id, users.account_name as seller_account_name, users.num_sell_items as seller_num_sell_items FROM `items` LEFT OUTER JOIN `users` ON users.id = items.seller_id
+        #     WHERE `status` IN (?, ?) AND category_id IN (?) AND (items.`created_at` < ?) ORDER BY items.`created_at` DESC, items.`id` DESC LIMIT #{ITEMS_PER_PAGE + 1}
+        #     UNION SELECT items.*, users.id as seller_id, users.account_name as seller_account_name, users.num_sell_items as seller_num_sell_items FROM `items` LEFT OUTER JOIN `users` ON users.id = items.seller_id
+        #     (items.`created_at` <= ? AND items.`id` < ?)) ORDER BY items.`created_at` DESC, items.`id` DESC LIMIT #{ITEMS_PER_PAGE + 1}
+        # EOS
         db.xquery("SELECT items.*, users.id as seller_id, users.account_name as seller_account_name, users.num_sell_items as seller_num_sell_items FROM `items` LEFT OUTER JOIN `users` ON users.id = items.seller_id WHERE `status` IN (?, ?) AND category_id IN (?) AND (items.`created_at` < ?  OR (items.`created_at` <= ? AND items.`id` < ?)) ORDER BY items.`created_at` DESC, items.`id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, category_ids, Time.at(created_at), Time.at(created_at), item_id)
+      # db.xquery(sql, ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, category_ids, Time.at(created_at), Time.at(created_at), item_id)
       else
         db.xquery("SELECT items.*, users.id as seller_id, users.account_name as seller_account_name, users.num_sell_items as seller_num_sell_items FROM `items` LEFT OUTER JOIN `users` ON users.id = items.seller_id WHERE `status` IN (?,?) AND category_id IN (?) ORDER BY items.`created_at` DESC, items.`id` DESC LIMIT #{ITEMS_PER_PAGE + 1}", ITEM_STATUS_ON_SALE, ITEM_STATUS_SOLD_OUT, category_ids)
       end
@@ -576,6 +601,7 @@ module Isucari
 
     # 該当ユーザーの取引情報を取得するAPI
     get '/users/transactions.json' do
+      begin
       user = get_user
 
       item_id = params['item_id'].to_i
@@ -585,16 +611,52 @@ module Isucari
       # 自分が出品しているor買っている商品一覧を取得する
       items = if item_id > 0 && created_at > 0
         # paging
-        begin
-          db.xquery("SELECT * FROM `items` WHERE (`seller_id` = ? OR `buyer_id` = ?) AND `status` IN (?, ?, ?, ?, ?) AND (`created_at` < ?  OR (`created_at` <= ? AND `id` < ?)) ORDER BY `created_at` DESC, `id` DESC LIMIT #{TRANSACTIONS_PER_PAGE + 1}", user['id'], user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP, Time.at(created_at), Time.at(created_at), item_id)
-        rescue
-          db.query('ROLLBACK')
-          halt_with_error 500, 'db error'
-        end
+        error_logger = Logger.new('sinatra_error.log')
+        sql = <<~SQL
+        SELECT
+         *
+        FROM (
+          SELECT
+            *
+          FROM `items`
+          WHERE `seller_id` = ?
+            AND `status` IN (?, ?, ?, ?, ?)
+            AND (`created_at` < ?  OR (`created_at` <= ? AND `id` < ?))
+          UNION
+          SELECT
+            *
+          FROM `items`
+          WHERE `buyer_id` = ?
+            AND `status` IN (?, ?, ?, ?, ?)
+            AND (`created_at` < ?  OR (`created_at` <= ? AND `id` < ?))
+        ) AS t
+          ORDER BY `created_at` DESC, `id` DESC LIMIT #{TRANSACTIONS_PER_PAGE + 1}
+        SQL
+        db.xquery("SELECT * FROM `items` WHERE (`seller_id` = ? OR `buyer_id` = ?) AND `status` IN (?, ?, ?, ?, ?) AND (`created_at` < ?  OR (`created_at` <= ? AND `id` < ?)) ORDER BY `created_at` DESC, `id` DESC LIMIT #{TRANSACTIONS_PER_PAGE + 1}", user['id'], user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP, Time.at(created_at), Time.at(created_at), item_id)
+        #db.xquery(sql, user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP, Time.at(created_at), Time.at(created_at), item_id, user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP, Time.at(created_at), Time.at(created_at), item_id)
       else
         # 1st page
         begin
+          sql = <<~SQL
+          SELECT
+            *
+          FROM (
+            SELECT
+              *
+            FROM `items`
+            WHERE `seller_id` = ?
+              AND `status` IN (?, ?, ?, ?, ?)
+            UNION
+            SELECT
+              *
+            FROM `items`
+            WHERE `buyer_id` = ?
+              AND `status` IN (?, ?, ?, ?, ?)
+          ) AS t
+          ORDER BY `created_at` DESC, `id` DESC LIMIT #{TRANSACTIONS_PER_PAGE + 1}
+          SQL
           db.xquery("SELECT * FROM `items` WHERE (`seller_id` = ? OR `buyer_id` = ?) AND `status` IN (?, ?, ?, ?, ?) ORDER BY `created_at` DESC, `id` DESC LIMIT #{TRANSACTIONS_PER_PAGE + 1}", user['id'], user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP)
+          #db.xquery(sql, user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP, user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP)
         rescue
           db.query('ROLLBACK')
           halt_with_error 500, 'db error'
@@ -687,7 +749,11 @@ module Isucari
         'has_next' => has_next
       }
 
+
       response.to_json
+      rescue => e
+        db.query('ROLLBACK')
+      end
     end
 
     # getUserItems
@@ -923,16 +989,39 @@ module Isucari
         halt_with_error 500, 'db error'
       end
 
+      # 非同期処理の途中
+      # shipment = Expeditor::Command.new(service: EXPEDITOR) do
+      #   api_client.shipment_create(get_shipment_service_url, to_address: buyer['address'], to_name: buyer['account_name'], from_address: seller['address'], from_name: seller['account_name'])
+      # end
+      # shipment.start
+      # payment = Expeditor::Command.new(service: EXPEDITOR) do
+      #   api_client.payment_token(get_payment_service_url, shop_id: PAYMENT_SERVICE_ISUCARI_SHOPID, token: token, api_key: PAYMENT_SERVICE_ISUCARI_APIKEY, price: target_item['price'])
+      # end
+      # payment.start
+
+      logger = Logger.new('sinatra.log')
       begin
+        # scr = Thread.new do
+        #   api_client.shipment_create(get_shipment_service_url, to_address: buyer['address'], to_name: buyer['account_name'], from_address: seller['address'], from_name: seller['account_name'])
+        # end
+        # 元のコード
         scr = api_client.shipment_create(get_shipment_service_url, to_address: buyer['address'], to_name: buyer['account_name'], from_address: seller['address'], from_name: seller['account_name'])
-      rescue
+        # sct = shipment.get
+      rescue => e
+        logger.info e
         db.query('ROLLBACK')
         halt_with_error 500, 'failed to request to shipment service'
       end
 
       begin
+        # pstr = Thread.new do
+        #   api_client.payment_token(get_payment_service_url, shop_id: PAYMENT_SERVICE_ISUCARI_SHOPID, token: token, api_key: PAYMENT_SERVICE_ISUCARI_APIKEY, price: target_item['price'])
+        # end
+        # 元のコード
         pstr = api_client.payment_token(get_payment_service_url, shop_id: PAYMENT_SERVICE_ISUCARI_SHOPID, token: token, api_key: PAYMENT_SERVICE_ISUCARI_APIKEY, price: target_item['price'])
-      rescue
+        # pstr = payment.get
+      rescue => e
+        logger.info e
         db.query('ROLLBACK')
         halt_with_error 500, 'payment service is failed'
       end
@@ -954,7 +1043,7 @@ module Isucari
 
       begin
         db.xquery('INSERT INTO `shippings` (`transaction_evidence_id`, `status`, `item_name`, `item_id`, `reserve_id`, `reserve_time`, `to_address`, `to_name`, `from_address`, `from_name`, `img_binary`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', transaction_evidence_id, SHIPPINGS_STATUS_INITIAL, target_item['name'], target_item['id'], scr['reserve_id'], scr['reserve_time'], buyer['address'], buyer['account_name'], seller['address'], seller['account_name'], '')
-      rescue
+      rescue => e
         db.query('ROLLBACK')
         halt_with_error 500, 'db error'
       end
@@ -1507,7 +1596,7 @@ module Isucari
     # getReports
     get '/reports.json' do
       transaction_evidences = db.xquery('SELECT * FROM `transaction_evidences` WHERE `id` > 15007')
-      
+
       response = transaction_evidences.map do |transaction_evidence|
         {
           'id' => transaction_evidence['id'],

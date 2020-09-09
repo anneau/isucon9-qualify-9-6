@@ -31,6 +31,8 @@ module Isucari
       JSON.parse(res.body)
     end
 
+    # 集荷予約の作成
+    # 配送先の住所・配送元の住所・名前を送ると数字10桁のid（集荷予約ID）が送られてくる
     def shipment_create(shipment_url, param)
       uri = URI.parse("#{shipment_url}/create")
 

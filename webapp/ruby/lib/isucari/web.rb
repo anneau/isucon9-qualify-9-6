@@ -6,7 +6,7 @@ require 'mysql2-cs-bind'
 require 'bcrypt'
 require 'isucari/api'
 require "newrelic_rpm"
-require 'logger'
+# require 'logger'
 require 'expeditor'
 
 class Mysql2ClientWithNewRelic < Mysql2::Client
@@ -85,8 +85,8 @@ module Isucari
 
     helpers do
       def db
-        # Thread.current[:db] ||= Mysql2::Client.new(
-        Thread.current[:db] ||= Mysql2ClientWithNewRelic.new(
+        Thread.current[:db] ||= Mysql2::Client.new(
+        # Thread.current[:db] ||= Mysql2ClientWithNewRelic.new(
           'host' => ENV['MYSQL_HOST'] || '127.0.0.1',
           'port' => ENV['MYSQL_PORT'] || '3306',
           'database' => ENV['MYSQL_DBNAME'] || 'isucari',
@@ -601,72 +601,114 @@ module Isucari
 
     # 該当ユーザーの取引情報を取得するAPI
     get '/users/transactions.json' do
-      begin
       user = get_user
 
       item_id = params['item_id'].to_i
       created_at = params['created_at'].to_i
+      # # logger = Logger.new('sinatra.log')
 
       db.query('BEGIN')
       # 自分が出品しているor買っている商品一覧を取得する
       items = if item_id > 0 && created_at > 0
         # paging
-        error_logger = Logger.new('sinatra_error.log')
         sql = <<~SQL
         SELECT
-         *
-        FROM (
-          SELECT
-            *
-          FROM `items`
-          WHERE `seller_id` = ?
-            AND `status` IN (?, ?, ?, ?, ?)
-            AND (`created_at` < ?  OR (`created_at` <= ? AND `id` < ?))
-          UNION
-          SELECT
-            *
-          FROM `items`
-          WHERE `buyer_id` = ?
-            AND `status` IN (?, ?, ?, ?, ?)
-            AND (`created_at` < ?  OR (`created_at` <= ? AND `id` < ?))
-        ) AS t
-          ORDER BY `created_at` DESC, `id` DESC LIMIT #{TRANSACTIONS_PER_PAGE + 1}
+          items.*,
+          sellers.account_name AS seller_name,
+          sellers.num_sell_items AS seller_num_sell_items,
+          buyers.account_name AS buyer_name,
+          buyers.num_sell_items AS buyer_num_sell_items
+        FROM items
+        INNER JOIN users sellers ON items.seller_id = sellers.id
+        LEFT OUTER JOIN users buyers ON buyers.id = items.buyer_id
+        where (items.seller_id = ? or items.buyer_id = ? )
+          and items.status in (?)
+          and (items.created_at < ? or (items.created_at <= ? and items.id < ?))
+        order by items.created_at desc, items.id desc limit #{TRANSACTIONS_PER_PAGE + 1}
         SQL
-        db.xquery("SELECT * FROM `items` WHERE (`seller_id` = ? OR `buyer_id` = ?) AND `status` IN (?, ?, ?, ?, ?) AND (`created_at` < ?  OR (`created_at` <= ? AND `id` < ?)) ORDER BY `created_at` DESC, `id` DESC LIMIT #{TRANSACTIONS_PER_PAGE + 1}", user['id'], user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP, Time.at(created_at), Time.at(created_at), item_id)
-        #db.xquery(sql, user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP, Time.at(created_at), Time.at(created_at), item_id, user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP, Time.at(created_at), Time.at(created_at), item_id)
+        # db.xquery("SELECT * FROM `items` WHERE (`seller_id` = ? OR `buyer_id` = ?) AND `status` IN (?, ?, ?, ?, ?) AND (`created_at` < ?  OR (`created_at` <= ? AND `id` < ?)) ORDER BY `created_at` DESC, `id` DESC LIMIT #{TRANSACTIONS_PER_PAGE + 1}", user['id'], user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP, Time.at(created_at), Time.at(created_at), item_id)
+        db.xquery(
+          sql,
+          user['id'],
+          user['id'],
+          [ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP],
+          Time.at(created_at),
+          Time.at(created_at),
+          item_id
+        )
       else
         # 1st page
         begin
           sql = <<~SQL
           SELECT
-            *
-          FROM (
-            SELECT
-              *
-            FROM `items`
-            WHERE `seller_id` = ?
-              AND `status` IN (?, ?, ?, ?, ?)
-            UNION
-            SELECT
-              *
-            FROM `items`
-            WHERE `buyer_id` = ?
-              AND `status` IN (?, ?, ?, ?, ?)
-          ) AS t
-          ORDER BY `created_at` DESC, `id` DESC LIMIT #{TRANSACTIONS_PER_PAGE + 1}
+            items.*,
+            sellers.account_name AS seller_name,
+            sellers.num_sell_items AS seller_num_sell_items,
+            buyers.account_name AS buyer_name,
+            buyers.num_sell_items AS buyer_num_sell_items
+          FROM items
+          INNER JOIN users sellers ON items.seller_id = sellers.id
+          LEFT OUTER JOIN users buyers ON buyers.id = items.buyer_id
+          WHERE
+            (
+              items.seller_id = ? OR items.buyer_id = ?
+            ) AND
+            items.status IN (?)
+          ORDER BY
+            items.created_at DESC, items.id DESC
+          LIMIT #{TRANSACTIONS_PER_PAGE + 1}
           SQL
-          db.xquery("SELECT * FROM `items` WHERE (`seller_id` = ? OR `buyer_id` = ?) AND `status` IN (?, ?, ?, ?, ?) ORDER BY `created_at` DESC, `id` DESC LIMIT #{TRANSACTIONS_PER_PAGE + 1}", user['id'], user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP)
-          #db.xquery(sql, user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP, user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP)
-        rescue
+          #db.xquery("SELECT * FROM `items` WHERE (`seller_id` = ? OR `buyer_id` = ?) AND `status` IN (?, ?, ?, ?, ?) ORDER BY `created_at` DESC, `id` DESC LIMIT #{TRANSACTIONS_PER_PAGE + 1}", user['id'], user['id'], ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP)
+          db.xquery(sql,
+                    user['id'],
+                    user['id'],
+                    [ITEM_STATUS_ON_SALE, ITEM_STATUS_TRADING, ITEM_STATUS_SOLD_OUT, ITEM_STATUS_CANCEL, ITEM_STATUS_STOP]
+                  )
+        rescue => e
+          # logger.info e
           db.query('ROLLBACK')
           halt_with_error 500, 'db error'
         end
       end
 
+      shippings_query = <<~SQL
+      select
+        s.reserve_id as reserve_id,
+        s.status as status,
+        te.id as transaction_evidence_id,
+        te.item_id as item_id,
+        te.status as transaction_evidence_status
+      from transaction_evidences te
+      inner join shippings s on s.transaction_evidence_id = te.id
+      where te.item_id in (?)
+      SQL
+      
+      shippings = db.xquery(shippings_query, items.map { |item| item['id'] }.join(', ')).map { |row| [row['item_id'], row] }.to_h
+
+      ssrs = begin
+        # api_client.bulk_shipment_status(get_shipment_service_url,
+        data = shippings.each_value.map { |shipping| { reserve_id: shipping['reserve_id'], status: shipping['status'] } }
+        commands = data.map do |datum|
+          Expeditor::Command.new(service:EXPEDITOR) do
+            if datum[:status] === 'done'
+              [datum[:reserve_id], { 'status' => 'done' }]
+            else
+              [datum[:reserve_id], api_client.shipment_status(get_shipment_service_url, 'reserve_id' => datum[:reserve_id])]
+            end
+          end
+        end
+        commands.each(&:start)
+        commands.map(&:get).to_h
+      rescue => e
+        # logger.info e
+        db.query('ROLLBACK')
+        halt_with_error 500, 'failed to request to shipment service'
+      end
+
       # それぞれの商品の結果を返すために、ループを回す
       item_details = items.map do |item|
-        seller = get_user_simple_by_id(item['seller_id'])
-        if seller.nil?
+        # seller = get_user_simple_by_id(item['seller_id'])
+        if item['seller_id'].nil?
           db.query('ROLLBACK')
           halt_with_error 404, 'seller not found'
         end
@@ -680,7 +722,11 @@ module Isucari
         item_detail = {
           'id' => item['id'],
           'seller_id' => item['seller_id'],
-          'seller' => seller,
+          'seller' => {
+            'id' => item['seller_id'],
+            'account_name' => user['seller_account_name'],
+            'num_sell_items' => user['seller_num_sell_items']
+          },
           # buyer_id
           # buyer
           'status' => item['status'],
@@ -698,40 +744,52 @@ module Isucari
 
          # 販売者の情報を取得する
         if item['buyer_id'] != 0
-          buyer = get_user_simple_by_id(item['buyer_id'])
-          if buyer.nil?
+          # buyer = get_user_simple_by_id(item['buyer_id'])
+          if item['buyer_id'].nil?
             db.query('ROLLBACK')
             halt_with_error 404, 'buyer not found'
           end
 
           item_detail['buyer_id'] = item['buyer_id']
-          item_detail['buyer'] = buyer
+          item_detail['buyer'] = {
+            'id' => item['buyer_id'],
+            'account_name' => item['buyer_name'],
+            'num_sell_items' => item['buyer_num_sell_items'],
+          }
+        end
+
+        shipping = shippings[item['id']]
+        if shipping
+          ssr = ssrs.fetch shipping['reserve_id']
+          item_detail['transaction_evidence_id'] = shipping['transaction_evidence_id']
+          item_detail['transaction_evidence_status'] = shipping['transaction_evidence_status']
+          item_detail['shipping_status'] = ssr['status']
         end
 
         # 配送状況を取得する
-        transaction_evidence = db.xquery('SELECT * FROM `transaction_evidences` WHERE `item_id` = ?', item['id']).first
-        unless transaction_evidence.nil?
-          shipping = db.xquery('SELECT * FROM `shippings` WHERE `transaction_evidence_id` = ?', transaction_evidence['id']).first
-          if shipping.nil?
-            db.query('ROLLBACK')
-            halt_with_error 404, 'shipping not found'
-          end
+        # transaction_evidence = db.xquery('SELECT * FROM `transaction_evidences` WHERE `item_id` = ?', item['id']).first
+        # unless transaction_evidence.nil?
+        #   shipping = db.xquery('SELECT * FROM `shippings` WHERE `transaction_evidence_id` = ?', transaction_evidence['id']).first
+        #   if shipping.nil?
+        #     db.query('ROLLBACK')
+        #     halt_with_error 404, 'shipping not found'
+        #   end
 
-          ssr = begin
-            if shipping['status'] === 'done'
-              { 'status' => 'done' }
-            else
-              api_client.shipment_status(get_shipment_service_url, 'reserve_id' => shipping['reserve_id'])
-            end
-          rescue
-            db.query('ROLLBACK')
-            halt_with_error 500, 'failed to request to shipment service'
-          end
+        #   ssr = begin
+        #     if shipping['status'] === 'done'
+        #       { 'status' => 'done' }
+        #     else
+        #       api_client.shipment_status(get_shipment_service_url, 'reserve_id' => shipping['reserve_id'])
+        #     end
+        #   rescue
+        #     db.query('ROLLBACK')
+        #     halt_with_error 500, 'failed to request to shipment service'
+        #   end
 
-          item_detail['transaction_evidence_id'] = transaction_evidence['id']
-          item_detail['transaction_evidence_status'] = transaction_evidence['status']
-          item_detail['shipping_status'] = ssr['status']
-        end
+        #   item_detail['transaction_evidence_id'] = transaction_evidence['id']
+        #   item_detail['transaction_evidence_status'] = transaction_evidence['status']
+        #   item_detail['shipping_status'] = ssr['status']
+        # end
 
         item_detail
       end
@@ -751,9 +809,6 @@ module Isucari
 
 
       response.to_json
-      rescue => e
-        db.query('ROLLBACK')
-      end
     end
 
     # getUserItems
@@ -989,26 +1044,26 @@ module Isucari
         halt_with_error 500, 'db error'
       end
 
-      # 非同期処理の途中
-      # shipment = Expeditor::Command.new(service: EXPEDITOR) do
-      #   api_client.shipment_create(get_shipment_service_url, to_address: buyer['address'], to_name: buyer['account_name'], from_address: seller['address'], from_name: seller['account_name'])
-      # end
-      # shipment.start
-      # payment = Expeditor::Command.new(service: EXPEDITOR) do
-      #   api_client.payment_token(get_payment_service_url, shop_id: PAYMENT_SERVICE_ISUCARI_SHOPID, token: token, api_key: PAYMENT_SERVICE_ISUCARI_APIKEY, price: target_item['price'])
-      # end
-      # payment.start
+      # # 非同期処理の途中
+      shipment = Expeditor::Command.new(service: EXPEDITOR) do
+        api_client.shipment_create(get_shipment_service_url, to_address: buyer['address'], to_name: buyer['account_name'], from_address: seller['address'], from_name: seller['account_name'])
+      end
+      shipment.start_with_retry(tries: 3, sleep: 1, on: [StandardError])
+      payment = Expeditor::Command.new(service: EXPEDITOR) do
+        api_client.payment_token(get_payment_service_url, shop_id: PAYMENT_SERVICE_ISUCARI_SHOPID, token: token, api_key: PAYMENT_SERVICE_ISUCARI_APIKEY, price: target_item['price'])
+      end
+      payment.start_with_retry(tries: 3, sleep: 1, on: [StandardError])
 
-      logger = Logger.new('sinatra.log')
+      # # logger = Logger.new('sinatra.log')
       begin
         # scr = Thread.new do
         #   api_client.shipment_create(get_shipment_service_url, to_address: buyer['address'], to_name: buyer['account_name'], from_address: seller['address'], from_name: seller['account_name'])
         # end
         # 元のコード
-        scr = api_client.shipment_create(get_shipment_service_url, to_address: buyer['address'], to_name: buyer['account_name'], from_address: seller['address'], from_name: seller['account_name'])
-        # sct = shipment.get
+        # scr = api_client.shipment_create(get_shipment_service_url, to_address: buyer['address'], to_name: buyer['account_name'], from_address: seller['address'], from_name: seller['account_name'])
+        scr = shipment.get
       rescue => e
-        logger.info e
+        # logger.info e
         db.query('ROLLBACK')
         halt_with_error 500, 'failed to request to shipment service'
       end
@@ -1018,10 +1073,10 @@ module Isucari
         #   api_client.payment_token(get_payment_service_url, shop_id: PAYMENT_SERVICE_ISUCARI_SHOPID, token: token, api_key: PAYMENT_SERVICE_ISUCARI_APIKEY, price: target_item['price'])
         # end
         # 元のコード
-        pstr = api_client.payment_token(get_payment_service_url, shop_id: PAYMENT_SERVICE_ISUCARI_SHOPID, token: token, api_key: PAYMENT_SERVICE_ISUCARI_APIKEY, price: target_item['price'])
-        # pstr = payment.get
+        # pstr = api_client.payment_token(get_payment_service_url, shop_id: PAYMENT_SERVICE_ISUCARI_SHOPID, token: token, api_key: PAYMENT_SERVICE_ISUCARI_APIKEY, price: target_item['price'])
+        pstr = payment.get
       rescue => e
-        logger.info e
+        # logger.info e
         db.query('ROLLBACK')
         halt_with_error 500, 'payment service is failed'
       end
